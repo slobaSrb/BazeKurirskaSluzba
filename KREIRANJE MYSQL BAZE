@@ -1,0 +1,184 @@
+ CREATE TABLE `artikal` (
+  `id_artikla` int(7) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `naziv_artikla` varchar(30) NOT NULL,
+  `putanja_do_slika` varchar(50) DEFAULT NULL,
+  `cena` int(7) UNSIGNED NOT NULL,
+  `opis` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`id_artikla`),
+  INDEX (`naziv_artikla`)
+) ENGINE=InnoDB DEFAULT CHARSET=UTF8;
+
+DROP TABLE IF EXISTS `artikli_porudzbine`;
+
+CREATE TABLE `artikli_porudzbine` (
+  `id_artikli_porudzbine` int(11) UNSIGNED PRIMARY KEY AUTO_INCREMENT NOT NULL,
+  `id_porudzbine` int(11) NOT NULL,
+  `id_artikla` int(11) NOT NULL,
+  `kolicina` int(11) UNSIGNED NOT NULL,
+  KEY `id_porudzbine` (`id_porudzbine`),
+  KEY `id_artikla` (`id_artikla`),
+  CONSTRAINT `fk_1_id_porudzbine` FOREIGN KEY (`id_porudzbine`) REFERENCES `porudzbina` (`id_porudzbine`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_2_id_porudzbine` FOREIGN KEY (`id_artikla`) REFERENCES `artikal` (`id_artikla`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=UTF8;
+
+  
+add CONSTRAINT `fk_id_statusa` FOREIGN KEY (`id_statusa`) REFERENCES `status_porudzbine` (`id_statusa`) ON DELETE restrict ON UPDATE CASCADE
+
+CREATE TABLE `isporuka` (
+  `id_isporuke` int(7) unsigned NOT NULL AUTO_INCREMENT,
+  `datum_preuzimanja` datetime NOT NULL,
+  `datum_prispeca_u_grad_destinacije` datetime DEFAULT NULL,
+  PRIMARY KEY (`id_isporuke`)
+) ENGINE=InnoDB DEFAULT CHARSET=UTF8;
+
+CREATE TABLE `isporuka_dani` (
+  `id_isporuka_dani` int(7) unsigned NOT NULL AUTO_INCREMENT,
+  `id_isporuke` int(7) unsigned NOT NULL,
+  `id_odgovarajuceg_dana` int(7) unsigned NOT NULL,
+  PRIMARY KEY (`id_isporuka_dani`),
+  KEY `fk_id_isporuke_1` (`id_isporuke`),
+  KEY `fk_id_dana` (`id_odgovarajuceg_dana`),
+  CONSTRAINT `fk_id_dana` FOREIGN KEY (`id_odgovarajuceg_dana`) REFERENCES `odgovarajuci_dani` (`id_odgovarajuceg_dana`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_id_isporuke_1` FOREIGN KEY (`id_isporuke`) REFERENCES `isporuka` (`id_isporuke`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=UTF8;
+
+
+ CREATE TABLE `odgovarajuci_dani` (
+  `id_odgovarajuceg_dana` int(7) unsigned NOT NULL AUTO_INCREMENT,
+  `ime_dana` varchar(9) DEFAULT NULL,
+  `redni_broj_dana` smallint(1) unsigned DEFAULT NULL,
+  `odgovarajuce_vreme_od` time DEFAULT NULL,
+  `odgovarajuce_vreme_do` time DEFAULT NULL,
+  PRIMARY KEY (`id_odgovarajuceg_dana`)
+) ENGINE=InnoDB DEFAULT CHARSET=UTF8;
+
+
+CREATE TABLE `korisnik` (
+  `id_korisnika` int(7) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ime_prezime` varchar(50) NOT NULL,
+  `email` varchar(30) NOT NULL,
+  `password` varchar(255) NOT NULL,
+  `telefon` varchar(15) NOT NULL,
+  PRIMARY KEY (`id_korisnika`)
+) ENGINE=InnoDB DEFAULT CHARSET=UTF8;
+
+
+CREATE TABLE `kupac` (
+  `id_kupca` int(7) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ime_prezime` varchar(50) NOT NULL,
+  `email` varchar(30) NOT NULL,
+  `telefon` varchar(15) NOT NULL,
+  `adresa_dostave` varchar(50) DEFAULT NULL,
+  `postanski_broj_dostave` int(7) unsigned DEFAULT NULL,
+  `grad` varchar(20) DEFAULT NULL,
+  PRIMARY KEY (`id_kupca`)
+) ENGINE=InnoDB DEFAULT CHARSET=UTF8;
+
+CREATE TABLE `platioc` (
+  `id_platioca` int(7) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ime_prezime` varchar(50) NOT NULL,
+  `email` varchar(30) NOT NULL,
+  `telefon` varchar(15) NOT NULL,
+  `adresa_platioca` varchar(50) DEFAULT NULL,
+  `postanski_broj_platioca` int(7) unsigned DEFAULT NULL,
+  `grad_platioca` varchar(20) DEFAULT NULL,
+  `id_kupca` int(7) UNSIGNED,
+  PRIMARY KEY (`id_platioca`),
+   KEY `id_kupca` (`id_kupca`),
+  CONSTRAINT `platioc_ibfk_1` FOREIGN KEY (`id_kupca`) REFERENCES `kupac` (`id_kupca`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=UTF8;
+
+/* PLATIOCI SE BRISU KADA JE IZVRSENA DOSTAVA KAO I KUPAC */  
+
+CREATE TABLE `porudzbina` (
+  `id_porudzbine` int(11) NOT NULL AUTO_INCREMENT,
+  `id_kupca` int(11) DEFAULT NULL,
+  `id_artikli_porudzbine` int(11) DEFAULT NULL,
+  `id_statusa` int(10) unsigned DEFAULT NULL,
+  `id_placanja` smallint(5) unsigned DEFAULT NULL,
+  `id_isporuke` int(10) unsigned DEFAULT NULL,
+  `identifikator_porudzbine` varchar(30) DEFAULT NULL,
+  PRIMARY KEY (`id_porudzbine`),
+  KEY `fk_id_statusa` (`id_statusa`),
+  KEY `fk_id_placanja` (`id_placanja`),
+  KEY `fk_id_isporuke` (`id_isporuke`),
+  KEY `fk_id_kupca` (`id_kupca`),
+  CONSTRAINT `fk_id_isporuke` FOREIGN KEY (`id_isporuke`) REFERENCES `isporuka` (`id_isporuke`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_id_kupca` FOREIGN KEY (`id_kupca`) REFERENCES `kupac` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_id_placanja` FOREIGN KEY (`id_placanja`) REFERENCES `placanje` (`id_placanja`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_id_statusa` FOREIGN KEY (`id_statusa`) REFERENCES `status_porudzbine` (`id_statusa`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8
+
+CREATE TABLE `placanje` (
+  `id_placanja` smallint(2) unsigned NOT NULL AUTO_INCREMENT,
+  `naziv_placanja` varchar(15) NOT NULL,
+  `cena_dostave` int(5) DEFAULT NULL,
+  `cena_artikla` int(7) DEFAULT NULL,
+  `cena_za_placanje` int(7) DEFAULT NULL,
+  PRIMARY KEY (`id_placanja`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+CREATE TABLE `placanje` (
+  `id_placanja` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
+  `id_nacina_placanja` smallint(5) unsigned DEFAULT NULL,
+  `cena_dostave` int(11) DEFAULT NULL,
+  `cena_artikla` int(11) DEFAULT NULL,
+  `cena_za_placanje` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id_placanja`),
+  KEY `placanje_ibfk_1` (`id_nacina_placanja`),
+  CONSTRAINT `placanje_ibfk_1` FOREIGN KEY (`id_nacina_placanja`) REFERENCES `nacin_placanja` (`id_nacina_placanja`) ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8
+
+drop table status;
+
+CREATE TABLE `status_porudzbine` (
+  `id_statusa` int(7) unsigned NOT NULL AUTO_INCREMENT,
+  `opis_statusa` varchar(50) DEFAULT NULL,
+  PRIMARY KEY (`id_statusa`)
+) ENGINE=InnoDB DEFAULT CHARSET=UTF8;
+
+drop table karakteristika;
+
+CREATE TABLE `karakteristika` (
+	`id_karakteristike` int(11) unsigned NOT NULL AUTO_INCREMENT,
+	`id_artikla` int(11) NOT NULL,
+	`naziv_karakteristike` varchar(30) NOT NULL,
+	`opis_karakteristike` varchar(30) DEFAULT NULL,
+	PRIMARY KEY (`id_karakteristike`),
+	KEY `fk_id_artikla` (`id_artikla`),
+    CONSTRAINT `fk_id_artikla` FOREIGN KEY (`id_artikla`) REFERENCES `artikal` (`id_artikla`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE= InnoDB DEFAULT CHARSET = UTF8;
+
+ALTER TABLE placanje 
+change naziv_placanja id_nacina_placanja int(1) unsigned;
+
+CREATE TABLE `nacin_placanja` (
+	`id_nacina_placanja` int(1) unsigned NOT NULL AUTO_INCREMENT,
+	`naziv_placanja` varchar(30) NOT NULL,
+	PRIMARY KEY (`id_nacina_placanja`)
+) ENGINE= InnoDB DEFAULT CHARSET = UTF8;
+
+CREATE TABLE `dostavljeno_kupcu` (
+	`id_dostavljanja` int(11) unsigned NOT NULL AUTO_INCREMENT,
+	`ime_prezime` varchar(50) NOT NULL,
+	`kolicina` int(7) NOT NULL,
+	PRIMARY KEY (`id_dostavljanja`)
+) ENGINE = InnoDB DEFAULT CHARSET = UTF8;
+
+CREATE TABLE `artikli_zarada` (
+	`id_artikla` int NOT NULL
+	`naziv_artikla` varchar(50) NOT NULL,
+	`cena` int NOT NULL,
+	PRIMARY KEY (`id_artikla`)
+) ENGINE = InnoDB DEFAULT CHARSET = UTF8;
+
+ALTER TABLE placanje
+ADD CONSTRAINT `fk_id_nacina_placanja` FOREIGN KEY (`id_nacina_placanja`) 
+REFERENCES nacin_placanja(`id_nacina_placanja`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE karakteristika
+ADD CONSTRAINT fk_id_artikla2 FOREIGN KEY (id_artikla) 
+REFERENCES artikal (id_artikla) ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE karakteristika
+ADD FOREIGN KEY (id_artikla) REFERENCES artikal(id_artikla)ON DELETE CASCADE ON UPDATE CASCADE;

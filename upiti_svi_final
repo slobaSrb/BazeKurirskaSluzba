@@ -1,0 +1,568 @@
+/* STA BI TREBALO DA SE IMPLEMENTIRA */
+/* KRENIMO OD OSNOVNOG */
+
+/* POPUNJAVANJE BAZE RANDOM PODACIMA */
+/* MORA SE VIDETI KOJE TABELE CE BITI POPUNJENE */
+/* DAKLE SVE NARUDZBINE RANDOM TREBA DA NAIDJU */ 
+
+
+/* UBACIVANJE RANDOM PODATAKA U TABELU SA ARTIKLIMA */ 
+
+DROP PROCEDURE IF EXISTS populate_random_artikal_data;
+
+DELIMITER $$
+CREATE PROCEDURE populate_random_artikal_data()
+BEGIN
+	DECLARE v int;
+	DECLARE l_desila_se_greska_pri_upisu boolean DEFAULT false;
+	
+	DECLARE CONTINUE HANDLER FOR SQLEXCEPTION SET l_desila_se_greska_pri_upisu = true;
+	
+	SET v = 0;
+
+	SET autocommit = 0;
+	
+	START TRANSACTION;
+
+	WHILE v < 20 DO
+		SELECT TRUNCATE(RAND()*1000000,0) INTO @rand_val;
+		INSERT INTO artikal(id_artikla,naziv_artikla, putanja_do_slika, cena, opis) 
+		VALUES (NULL,CONCAT('artikal broj ', v), NULL, @rand_val ,CONCAT('opis artikla broj ', v));
+		SET v = v + 1;
+	END WHILE;
+
+	IF l_desila_se_greska_pri_upisu THEN
+		ROLLBACK;
+		SELECT false;
+	ELSE
+		COMMIT;
+		SELECT true;
+	END IF;
+	
+	
+END $$
+DELIMITER ;
+
+/* UBACIVANJE NEKOLIKO KUPACA */
+
+DROP PROCEDURE IF EXISTS populate_kupac_table;
+
+DELIMITER //
+CREATE PROCEDURE populate_kupac_table()
+BEGIN
+	INSERT INTO kupac VALUES
+	("Slobodan Stankovic", null, "slobodan.stankovic@pmf.edu.rs", "ul. Sremska 16", 18000, "Nis", "0659695444"),
+	("Marija Stankovic", null, "marija.stankovic@pmf.edu.rs", "ul. Sremska 16", 18000, "Nis", "0659695444"),
+	("Stana Stankovic", null, "stana.stankovic@pmf.edu.rs", "ul. Sremska 16", 18000, "Nis", "0659695444");
+END //
+DELIMITER ;
+
+
+/* EVENT KOJI RACUNA KOLIKO JE PORUDZBINA DOSTAVLJENO KOM KUPCU*/
+
+DROP EVENT IF EXISTS e_koliko_je_porudzbina_dostavljeno;
+
+DELIMITER //
+CREATE EVENT e_koliko_je_porudzbina_dostavljeno_kupcu
+ON SCHEDULE EVERY 1 DAY
+DO 
+BEGIN 
+	
+	DROP VIEW IF EXISTS v_dostavljeno_kupcu;
+	
+	-- broji koliko ima dostavljenih posiljaka kome kupcu 
+	
+	CREATE VIEW v_dostavljeno_kupcu AS  
+	SELECT COUNT(i.datum_prispeca_u_grad_destinacije) AS kolicina, k.ime_prezime AS ime_prezime
+	FROM porudzbina p
+	INNER JOIN isporuka i ON p.id_isporuke = i.id_isporuke
+	INNER JOIN kupac k ON p.id_kupca = k.id
+	WHERE i.datum_prispeca_u_grad_destinacije < NOW()
+	GROUP BY k.ime_prezime;
+
+	
+END //
+DELIMITER ;
+
+/* EVENT KOJI RACUNA KOLIKA JE ZARADA NA KOM ARTIKLU */
+
+/*
+DROP EVENT IF EXISTS e_koliko_je_zarada_na_kom_artiklu;
+
+DELIMITER //
+CREATE EVENT e_koliko_je_zarada_na_kom_artiklu
+ON SCHEDULE EVERY 1 DAY
+DO 
+BEGIN 
+	DECLARE _naziv_artikla VARCHAR(50) DEFAULT "";
+	DECLARE _cena INT DEFAULT 0;
+	DECLARE _id_isporuke INT DEFAULT 0;
+	DECLARE _naziv VARCHAR(50) DEFAULT "";
+	DECLARE _napusti_petlju INT DEFAULT 0;
+	
+	DECLARE c CURSOR FOR   
+	SELECT i.id_isporuke AS id_isporuke, a.naziv_artikla AS naziv_artikla, a.cena AS cena
+	FROM porudzbina p
+	INNER JOIN isporuka i ON p.id_isporuke = i.id_isporuke
+	INNER JOIN artikli_porudzbine ap ON p.id_porudzbine = ap.id_porudzbine
+	INNER JOIN artikal a ON a.id_artikla = ap.id_artikla
+	WHERE i.datum_prispeca_u_grad_destinacije < NOW();
+	
+	DECLARE EXIT HANDLER FOR NOT FOUND 
+		BEGIN
+			SET _napusti_petlju = 1;
+			CLOSE c;
+		END;
+	
+	DROP VIEW IF EXISTS v_artikli_zarada;
+	
+	CREATE VIEW v_artikli_zarada AS 
+	SELECT a.id_artikla, a.naziv_artikla, SUM(a.cena)
+	FROM porudzbina p
+	INNER JOIN isporuka i ON p.id_isporuke = i.id_isporuke
+	INNER JOIN artikli_porudzbine ap ON p.id_porudzbine = ap.id_porudzbine
+	INNER JOIN artikal a ON a.id_artikla = ap.id_artikla
+	WHERE i.datum_prispeca_u_grad_destinacije < NOW()
+	GROUP BY a.id_artikla;
+
+	
+		
+	OPEN c;
+	petlja: WHILE TRUE DO 
+		FETCH c INTO _id_isporuke, _naziv_artikla, _cena;
+		IF _napusti_petlju THEN 
+			LEAVE petlja;
+		END IF;
+		
+		-- naziv iz artikli_zarada tabele 
+		SET _naziv = (SELECT az.naziv_artikla FROM v_artikli_zarada az WHERE _naziv_artikla = az.naziv_artikla);
+		
+		-- ako je naziv NULL ubaci u artikli_zarada naziv_artikla i cenu 
+		IF _naziv is NULL THEN
+			INSERT INTO v_artikli_zarada VALUES (_naziv_artikla, _cena);
+		ELSE 
+			-- ako postoji naziv povisi cenu 
+			-- ali samo za one nove artikle
+			IF _id_isporuke IN (SELECT id_isporuke FROM isporuka) THEN 
+				SELECT FALSE;
+			ELSE 
+				UPDATE v_artikli_zarada 
+				SET cena = cena + _cena 
+				WHERE naziv_artikla = _naziv;
+			END IF;
+		END IF;
+	END WHILE;
+	CLOSE c;
+END //
+DELIMITER ;
+*/
+/* event koji updejtuje statuse dostavljenih posiljki po datumu */
+
+DROP EVENT IF EXISTS e_status_porudzbine;
+
+DELIMITER //
+CREATE EVENT e_status_porudzbine
+ON SCHEDULE EVERY 1 DAY
+DO 
+BEGIN 
+	DECLARE _id_porudzbine INT DEFAULT 0;
+	DECLARE _id_statusa INT DEFAULT 0;
+	DECLARE _dpugd DATETIME DEFAULT NOW();
+	DECLARE _napusti_petlju INT DEFAULT 0;
+	
+	
+	-- kursor koji uzima id_porudzbine, id_statusa, datum_prispeca_u_grad_destinacije
+	DECLARE c CURSOR FOR 
+	SELECT p.id_porudzbine, sp.id_statusa, i.datum_prispeca_u_grad_destinacije
+	FROM status_porudzbine sp 
+	INNER JOIN porudzbina p ON sp.id_statusa = p.id_statusa 
+	INNER JOIN isporuka i ON i.id_isporuke = p.id_isporuke;
+	
+	DECLARE EXIT HANDLER FOR NOT FOUND 
+		BEGIN
+			SET _napusti_petlju = 1;
+			CLOSE c;
+		END;
+	
+	OPEN c;
+	petlja: WHILE TRUE DO 
+		FETCH c INTO _id_porudzbine, _id_statusa, _dpugd;
+
+		IF _napusti_petlju THEN 
+			LEAVE petlja;
+		END IF;
+		
+		-- ako je datum_prispeca_u_grad_destinacije manji od sadasnjeg vremena updejtuje se svaki status iz kursora na 5 (dostavljen kupcu)
+		IF _dpugd < NOW() THEN
+			UPDATE porudzbina 
+			SET id_statusa = 5
+			WHERE id_porudzbine = _id_porudzbine;
+		END IF;
+	END WHILE;
+	CLOSE c;
+	
+END //
+
+call populate_random_artikal_data();
+/* PROCEDURA ZA POPUNJAVANJE TABELE ARTIKLI */ 
+
+DROP PROCEDURE IF EXISTS add_artikal;
+
+DELIMITER $$
+CREATE PROCEDURE add_artikal(
+IN naziv_artikla varchar(30),
+IN putanja_do_slika varchar(50),
+IN cena int(7),
+IN opis varchar(255)
+)
+BEGIN 
+	
+	DECLARE l_desila_se_greska_pri_upisu boolean DEFAULT false;
+	
+	DECLARE CONTINUE HANDLER FOR SQLEXCEPTION SET l_desila_se_greska_pri_upisu = true;
+
+	SET autocommit = 0;
+	
+	START TRANSACTION;
+
+	INSERT INTO `artikal` VALUES (NULL, naziv_artikla, putanja_do_slika, cena, opis);
+	
+	IF l_desila_se_greska_pri_upisu THEN
+		ROLLBACK;
+		SELECT false;
+	ELSE 
+		COMMIT;
+		SELECT true;
+	END IF;
+END$$
+DELIMITER ;
+
+
+/* PROCEDURA ZA POPUNJAVANJE STATUSA PORUDZBINE */
+
+DROP PROCEDURE IF EXISTS populate_status_table;
+
+DELIMITER $$
+CREATE PROCEDURE populate_status_table()
+BEGIN	
+
+	DECLARE l_desila_se_greska_pri_upisu boolean DEFAULT false;
+	
+	DECLARE CONTINUE HANDLER FOR 42000 SET l_desila_se_greska_pri_upisu = true;
+
+	SET autocommit = 0;
+	START TRANSACTION;
+
+	
+	INSERT INTO `status_porudzbine`(`id_statusa`, `opis_statusa`) VALUES(1, 'u pripremi');
+	INSERT INTO `status_porudzbine`(`id_statusa`, `opis_statusa`) VALUES(2, 'spreman za preuzimanje');
+	INSERT INTO `status_porudzbine`(`id_statusa`, `opis_statusa`) VALUES(3, 'preuzet od kurira');
+	INSERT INTO `status_porudzbine`(`id_statusa`, `opis_statusa`) VALUES(4, 'dostavljen u grad destiniciju');
+	INSERT INTO `status_porudzbine`(`id_statusa`, `opis_statusa`) VALUES(5, 'dostavljen kupcu');
+	INSERT INTO `status_porudzbine`(`id_statusa`, `opis_statusa`) VALUES(6, 'vracen posiljaocu');
+	
+	
+	IF l_desila_se_greska_pri_upisu THEN
+		select 'string';
+		ROLLBACK;	
+		select false;
+	ELSE
+		COMMIT;
+		select true;
+	END IF;
+	
+END$$
+DELIMITER ;
+
+call populate_status_table();
+
+/* PROCEDURA ZA POPUNJAVANJE NACINA PLACANJA */ 
+
+DROP PROCEDURE IF EXISTS populate_nacin_placanja_table;
+
+DELIMITER $$
+CREATE PROCEDURE populate_nacin_placanja_table(
+
+)
+BEGIN
+
+	DECLARE l_desila_se_greska_pri_upisu boolean DEFAULT false;
+	
+	DECLARE CONTINUE HANDLER FOR SQLEXCEPTION SET l_desila_se_greska_pri_upisu = true;
+
+
+	SET autocommit = 0;
+	
+	DELETE FROM `nacin_placanja`;
+
+	ALTER TABLE `nacin_placanja` AUTO_INCREMENT = 1;
+	
+	START TRANSACTION;
+	
+
+	INSERT INTO `nacin_placanja`(`naziv_placanja`) VALUES('pouzecem');
+	INSERT INTO `nacin_placanja`(`naziv_placanja`) VALUES('karticom');
+	INSERT INTO `nacin_placanja`(`naziv_placanja`) VALUES('kreditom na 6 rata');
+	INSERT INTO `nacin_placanja`(`naziv_placanja`) VALUES('kreditom na 12 rata');
+	INSERT INTO `nacin_placanja`(`naziv_placanja`) VALUES('kreditom na 24 rata');
+	INSERT INTO `nacin_placanja`(`naziv_placanja`) VALUES('vec placeno');
+
+	IF l_desila_se_greska_pri_upisu THEN
+		ROLLBACK;	
+		select false;
+	ELSE
+		COMMIT;
+		select true;
+	END IF;
+
+END$$
+DELIMITER ;
+
+call populate_nacin_placanja_table();
+
+/* trigger za ubacivanje artikla i racunanje placanja */
+DROP TRIGGER IF EXISTS t_ubaci_artikal_u_korpu;
+
+DELIMITER $$
+	CREATE TRIGGER t_ubaci_artikal_u_korpu 
+	AFTER INSERT ON artikli_porudzbine
+	FOR EACH ROW
+	BEGIN
+		DECLARE suma_korpe int DEFAULT 0;
+		DECLARE placanja_id int DEFAULT 0;
+		DECLARE artikla_cena int DEFAULT 0;
+	
+	
+		-- posle inserta u artikli_porudzbine tabelu 
+		-- racuna se suma korpe gde se join-uje po new.id_porudzbine 
+		SELECT SUM(cena * new.kolicina) into suma_korpe 
+		FROM artikal as a 
+		JOIN artikli_porudzbine as ap ON a.id_artikla = ap.id_artikla
+		JOIN porudzbina p ON p.id_porudzbine = new.id_porudzbine AND ap.id_porudzbine = new.id_porudzbine;
+		
+		select id_placanja into placanja_id from placanje where id_placanja in (select id_placanja from porudzbina where id_porudzbine = new.id_porudzbine);
+		
+		SELECT cena into artikla_cena from artikal where id_artikla = new.id_artikla;
+	
+		-- pribavi se id_placanja, 
+		-- ako postoji povisi se cena_artikla u placanje tabeli za cenu_artikla iz artikal tabele 
+		-- povisi se i cena za placanje, a to je suma korpe dosadasnje
+	IF placanja_id IS NOT NULL THEN	
+		UPDATE placanje 
+		SET cena_artikla = cena_artikla + artikla_cena,
+			cena_za_placanje = cena_za_placanje + suma_korpe
+		WHERE id_placanja = placanja_id;
+	ELSE
+		-- ako ne postoji ubacuje se novo placanje 
+		INSERT INTO placanje (cena_dostave, cena_artikla, cena_za_placanje) VALUES (500, artikla_cena, suma_korpe);
+		
+	END IF;
+	
+		
+	END$$
+	DELIMITER ;
+	
+/* trigger koji posle brisanja iz tabele artikli porudzbine uredjuje cenu porudzbine, tj. u tabeli placanje vraca racunicu */	
+	
+DROP TRIGGER IF EXISTS t_izbaci_artikal_iz_korpe;
+
+DELIMITER $$
+	CREATE TRIGGER t_izbaci_artikal_iz_korpe 
+	AFTER DELETE ON artikli_porudzbine
+	FOR EACH ROW
+	BEGIN
+		DECLARE suma_korpe int DEFAULT 0;
+		DECLARE artikla_cena int DEFAULT 0;
+		DECLARE placanja_id int DEFAULT 0;
+		
+		SELECT SUM(cena * old.kolicina) into suma_korpe 
+		FROM artikal as a 
+		JOIN artikli_porudzbine as ap ON a.id_artikla = ap.id_artikla
+		JOIN porudzbina p ON p.id_porudzbine = old.id_porudzbine AND ap.id_porudzbine = old.id_porudzbine;
+		
+		select id_placanja into placanja_id from placanje where id_placanja in (select id_placanja from porudzbina where id_porudzbine = old.id_porudzbine);
+		
+		SELECT cena into artikla_cena from artikal where id_artikla = old.id_artikla;
+
+
+	IF placanja_id THEN	
+		UPDATE placanje 
+		SET cena_artikla = cena_artikla - artikla_cena,
+			cena_za_placanje = cena_za_placanje - suma_korpe
+		WHERE id_placanja = placanja_id;
+	END IF;
+	
+		
+	END$$
+	DELIMITER ;
+
+/*TRIGGER ZA UPDATEOVANJE IDENTIFIKATORA PORUDZBINE KADA SE SVAKA PORUDZBINA UNESE */
+
+DROP TRIGGER IF EXISTS t_updejtuj_identifikatore_porudzbine;
+
+DELIMITER //
+CREATE TRIGGER t_updejtuj_identifikatore_porudzbine
+BEFORE INSERT ON porudzbina
+	FOR EACH ROW
+	BEGIN
+		SET @porudzbina_id = (SELECT id_porudzbine FROM porudzbina ORDER BY id_porudzbine DESC LIMIT 1);
+		SET NEW.identifikator_porudzbine = CONCAT(@porudzbina_id + 1, NEW.id_kupca, NEW.id_statusa, NEW.id_placanja, NEW.id_isporuke);
+	END //
+DELIMITER ;
+
+/* PROCEDURA ZA RACUNANJE UKUPNE ZARADE, MESECNO, RACUNANJE PROMETA, MESECNO, GODISNJE */
+
+DROP PROCEDURE IF EXISTS p_ukupna_zarada_promet;
+
+DELIMITER //
+CREATE PROCEDURE p_ukupna_zarada_promet(
+	OUT mesecna_zarada BIGINT,
+	OUT godisnja_zarada BIGINT, 
+	OUT mesecni_promet BIGINT,
+	OUT godisnji_promet BIGINT
+)
+BEGIN 
+	
+	
+	SELECT 
+		SUM(cena_dostave), SUM(cena_za_placanje) INTO mesecna_zarada, mesecni_promet
+	FROM porudzbina p 
+	INNER JOIN placanje pl ON p.id_placanja = pl.id_placanja 
+	INNER JOIN isporuka i ON i.id_isporuke = p.id_isporuke
+	WHERE MONTH(i.datum_preuzimanja) = MONTH(now());
+	
+	
+	SELECT 
+		SUM(cena_dostave), SUM(cena_za_placanje) INTO godisnja_zarada, godisnji_promet
+	FROM porudzbina p 
+	INNER JOIN placanje pl ON p.id_placanja = pl.id_placanja 
+	INNER JOIN isporuka i ON i.id_isporuke = p.id_isporuke
+	WHERE YEAR(i.datum_preuzimanja) = YEAR(now());
+	
+	
+END //
+DELIMITER ;
+
+
+/* FUNKCIJA ZA UBACIVANJE PORUDZBINE */
+
+DROP FUNCTION ubaci_porudzbinu;
+DELIMITER $$
+CREATE FUNCTION ubaci_porudzbinu(
+	id_kupca int(11),
+	id_statusa int(10),
+	id_placanja smallint(5),
+	id_isporuke int(10)
+)
+RETURNS boolean 
+BEGIN 
+
+	DECLARE l_desila_se_greska_pri_upisu boolean DEFAULT false;
+	DECLARE identifikator varchar(40) DEFAULT '';
+	
+	DECLARE CONTINUE HANDLER FOR SQLEXCEPTION SET l_desila_se_greska_pri_upisu = true;
+
+	SET identifikator = CONCAT(`id_kupca`,`id_statusa`, `id_placanja`, `id_isporuke`);
+
+	
+	INSERT INTO `porudzbina` VALUES (null, `id_kupca`, `id_statusa`, `id_placanja`, `id_isporuke`,identifikator);
+
+
+	IF l_desila_se_greska_pri_upisu THEN
+		RETURN false;
+	ELSE RETURN true;
+	END IF;
+
+END $$
+DELIMITER ;
+
+select ubaci_porudzbinu(
+	3,
+	2,
+	2,
+	1
+);
+
+	INSERT INTO `porudzbina` VALUES (null, 3, 2, 1, 1, "1211");
+	
+	INSERT INTO placanje VALUES (null, 2, 500, 4000, 4500);
+
+	INSERT INTO isporuka VALUES (null, now(), now());
+	
+ALTER TABLE placanje
+ADD FOREIGN KEY (id_nacin_placanja) REFERENCES nacin_placanja(id_nacin_placanja);
+
+/* FUNKCIJA ZA UBACIVANJE ARTIKLA U KORPU */ 
+
+DROP FUNCTION IF EXISTS ubaci_artikal_u_korpu;
+DELIMITER $$
+CREATE FUNCTION ubaci_artikal_u_korpu(
+`id_artikla` int(11),
+`id_porudzbine` int (11),
+`kolicina` int (11)
+  )
+  RETURNS boolean
+BEGIN
+
+	DECLARE l_desila_se_greska_pri_upisu boolean DEFAULT false;
+	
+	DECLARE CONTINUE HANDLER FOR SQLEXCEPTION SET l_desila_se_greska_pri_upisu = true;
+		
+	INSERT INTO `artikli_porudzbine`(`id_porudzbine`, `id_artikla`,`kolicina`) VALUES (`id_porudzbine`, `id_artikla`, `kolicina`);
+
+	IF l_desila_se_greska_pri_upisu THEN
+		RETURN false;
+	ELSE RETURN true;
+	END IF;
+
+END $$
+DELIMITER ;
+
+
+/* ubacivanje artikla u korpu id artikla, id porudzbine, kolicina */
+
+select ubaci_artikal_u_korpu(25,16,1);
+
+INSERT INTO `artikli_porudzbine`(`id_porudzbine`, `id_artikla`,`kolicina`) VALUES (16, 25, 1);
+ 
+/* FUNKCIJA ZA IZBACIVANJE ARTIKLA IZ KORPE */
+
+DROP FUNCTION IF EXISTS izbaci_artikal_iz_korpe;
+
+DELIMITER $$
+CREATE FUNCTION izbaci_artikal_iz_korpe(
+artikal int(7),
+porudzbina int(7),
+kolicina int(7)
+)
+RETURNS boolean 
+BEGIN 
+	
+	DECLARE l_desila_se_greska_pri_upisu boolean DEFAULT false;
+	
+	DECLARE CONTINUE HANDLER FOR SQLEXCEPTION SET l_desila_se_greska_pri_upisu = true;
+	
+	DELETE FROM artikli_porudzbine where id_artikla = artikal && id_porudzbine = porudzbina limit kolicina;
+
+	IF l_desila_se_greska_pri_upisu THEN
+		RETURN false;
+	ELSE RETURN true;
+	END IF;
+
+
+END $$
+DELIMITER ;
+
+select izbaci_artikal_iz_korpe(25,16,1);
+
+
+
+alter table artikli_porudzbine drop foreign key fk_1_id_porudzbine;
+
+alter table artikli_porudzbine add constraint fk_1_id_porudzbine foreign key (id_porudzbine) references porudzbina (id_porudzbine) on update cascade on delete restrict;
+
+
+
+  /* kreirati porudzbinu u transakciji sa samo id_kupca */ 
+  
+  INSERT INTO `porudzbina` (`id_kupca`) VALUES (@id_kupca_koji_ceka);
